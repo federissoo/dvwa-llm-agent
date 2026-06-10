@@ -43,12 +43,12 @@ graph TD
 | 1 | `node_init` | Legge `low.php` dal disco, resetta il DB DVWA ed effettua il login automatico per inizializzare la sessione | — |
 | 2 | `node_red_team` | Genera payload SQL Injection iterativi | gpt-4o-mini |
 | 3 | `node_esegui_attacco` | Invia il payload a DVWA via HTTP; conta `First name:` per determinare l'esito | — |
-| 4 | `node_judge_attacco` | Ragiona sul perché l'attacco ha funzionato/fallito; fornisce tecnica e suggerimenti | gpt-4o |
+| 4 | `node_judge_attacco` | Ragiona sul perché l'attacco ha funzionato/fallito; fornisce tecnica e suggerimenti | gpt-4o-mini |
 | 5 | `node_feedback_attacco` | Inietta feedback del judge nello storico messaggi del red team | — |
 | 6 | `node_blue_team` | Genera una patch in formato **Unified Diff**, ripristina il codice originale, la applica su disco ed esegue il controllo di sintassi PHP (`php -l`) | gpt-4o-mini |
 | 7 | `node_feedback_patch` | Inietta problemi rilevati dal judge nella prossima iterazione del blue team | — |
 | 8 | `node_valida_patch` | Resetta il DB e ri-esegue sia il **Security Test** (exploit) che il **Functional Regression Test** (business logic) per validare la patch | — |
-| 9 | `node_judge_patch` | Valuta la qualità del codice patchato ed esprime il giudizio finale di conformità | gpt-4o |
+| 9 | `node_judge_patch` | Valuta la qualità del codice patchato ed esprime il giudizio finale di conformità | gpt-4o-mini |
 
 ---
 
