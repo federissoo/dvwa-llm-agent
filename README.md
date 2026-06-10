@@ -24,9 +24,7 @@ graph TD
     judge_attacco -->|fallito + feedback| feedback_attacco --> red_team
     judge_attacco -->|fallito + esaurito| END_A([END])
 
-    blue_team -->|patch scritta| valida_patch
-    blue_team -->|errore| END_B([END])
-
+    blue_team --> valida_patch
     valida_patch --> judge_patch
 
     judge_patch -->|patch OK| END_C([END])
