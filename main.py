@@ -5,10 +5,10 @@ Usage:
     python main.py
 
 Prerequisites:
-    1. Copy api_keys.env.example → api_keys.env and fill in credentials.
+    1. Copy api_keys.env.example → api_keys.env and fill in LLM credentials.
     2. docker compose up -d   (starts DVWA on 127.0.0.1:4280)
-    3. Log in to http://localhost:4280, copy the PHPSESSID cookie value
-       and paste it into api_keys.env.
+    3. (Optional) Manual PHPSESSID: If you want to use a specific session, paste it into api_keys.env.
+       Otherwise, the agent will automatically log in and configure the session.
 """
 
 import os
