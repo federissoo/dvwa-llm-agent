@@ -40,15 +40,15 @@ graph TD
 
 | # | Nodo | Ruolo | LLM |
 |---|------|-------|-----|
-| 1 | `node_init` | Legge `low.php` dal disco e salva in stato; esce se il file manca | — |
+| 1 | `node_init` | Legge `low.php` dal disco, resetta il DB DVWA ed effettua il login automatico per inizializzare la sessione | — |
 | 2 | `node_red_team` | Genera payload SQL Injection iterativi | gpt-4o-mini |
-| 3 | `node_esegui_attacco` | Invia il payload a DVWA via HTTP; conta `First name:` per determinare il fatto | — |
+| 3 | `node_esegui_attacco` | Invia il payload a DVWA via HTTP; conta `First name:` per determinare l'esito | — |
 | 4 | `node_judge_attacco` | Ragiona sul perché l'attacco ha funzionato/fallito; fornisce tecnica e suggerimenti | gpt-4o |
 | 5 | `node_feedback_attacco` | Inietta feedback del judge nello storico messaggi del red team | — |
-| 6 | `node_blue_team` | Genera patch PHP con prepared statements partendo dal codice originale | gpt-4o-mini |
+| 6 | `node_blue_team` | Genera una patch in formato **Unified Diff**, ripristina il codice originale, la applica su disco ed esegue il controllo di sintassi PHP (`php -l`) | gpt-4o-mini |
 | 7 | `node_feedback_patch` | Inietta problemi rilevati dal judge nella prossima iterazione del blue team | — |
-| 8 | `node_valida_patch` | Ri-esegue l'attacco sul codice patchato per verificare l'efficacia | — |
-| 9 | `node_judge_patch` | Valuta qualità del codice patchato e conferma blocco dell'attacco | gpt-4o |
+| 8 | `node_valida_patch` | Resetta il DB e ri-esegue sia il **Security Test** (exploit) che il **Functional Regression Test** (business logic) per validare la patch | — |
+| 9 | `node_judge_patch` | Valuta la qualità del codice patchato ed esprime il giudizio finale di conformità | gpt-4o |
 
 ---
 
@@ -62,19 +62,17 @@ cd dvwa-llm-agent
 # 2. Configura le credenziali
 cp api_keys.env.example api_keys.env
 # Modifica api_keys.env:
-#   - OPENAI_API_KEY → chiave OpenAI
-#   - PHPSESSID → cookie copiato dal browser dopo login su http://localhost:4280
+#   - OPENAI_API_KEY → chiave OpenAI (o impostare LLM_PROVIDER su groq/gemini con relative chiavi)
+#   - PHPSESSID → (Opzionale) Se vuoto o omesso, il sistema esegue il login automatico in autonomia
 
-# 3. Avvia DVWA
+# 3. Avvia DVWA (se non è già attivo localmente su 127.0.0.1:4280)
 docker compose up -d
 
 # 4. Esegui l'agente
 python main.py
 ```
 
-> **Login DVWA**: naviga su `http://localhost:4280`, accedi con `admin / password`,
-> vai su *DVWA Security* → imposta **Low**, poi copia il cookie `PHPSESSID`
-> da DevTools → Application → Cookies e incollalo in `api_keys.env`.
+> **Nota sulla Sessione**: Il sistema include un meccanismo di login automatico. All'avvio e ad ogni reset del database, l'agente effettua automaticamente il login con le credenziali standard (`admin` / `password`) per rigenerare e mantenere aggiornato il cookie `PHPSESSID`. Non è quindi richiesta alcuna operazione manuale di copia del cookie dal browser.
 
 ---
 

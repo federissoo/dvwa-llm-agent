@@ -118,8 +118,9 @@ Restituisci SOLO un JSON (nessun testo prima o dopo):
 # ---------------------------------------------------------------------------
 
 BLUE_TEAM_SYSTEM = (
-    "Sei un esperto di Secure Coding in PHP. Restituisci solo codice sorgente valido."
+    "Sei un esperto di Secure Coding in PHP. Restituisci solo patch valide in formato Unified Diff."
 )
+
 
 
 def prompt_blue_team(
@@ -142,8 +143,9 @@ def prompt_blue_team(
         f"Codice vulnerabile:\n```php\n{codice_originale}\n```\n\n"
         f"Payload usato: {payload}. Tecnica: {tecnica_usata}.\n\n"
         "Correggi con prepared statements (PDO o MySQLi). "
-        "Restituisci l'INTERO file modificato. "
-        "IMPORTANTE: scrivi SOLO codice PHP puro, zero spiegazioni, zero markdown."
+        "Genera e restituisci una patch in formato Unified Diff standard (usando i prefissi --- low.php e +++ low.php). "
+        "IMPORTANTE: Nel diff, mantieni ESATTAMENTE tutte le righe di contesto originali (inclusi tutti i commenti che iniziano con # o //, le righe vuote e gli spazi/tabulazioni originali). Non omettere MAI righe commentate (come quelle con #) o righe vuote se sono all'interno della sezione che stai modificando, altrimenti lo strumento `patch` fallirà a causa di conflitti. "
+        "Scrivi SOLO il blocco di codice diff unificato (delimitato da ```diff), zero spiegazioni, zero testo extra."
     )
 
 
@@ -168,14 +170,15 @@ def prompt_feedback_patch(
         Formatted human message string for the blue team retry.
     """
     return (
-        f"La tua patch precedente NON ha bloccato l'attacco.\n\n"
+        f"La tua patch precedente NON ha bloccato l'attacco oppure ha rotto le funzionalità legittime.\n\n"
         f"Problemi identificati: {problemi}\n"
         f"Motivazione: {motivazione}\n\n"
         f"Riparti dal codice originale vulnerabile:\n```php\n{codice_originale}\n```\n\n"
         f"Payload che ha bypassato la patch: {payload}. Tecnica: {tecnica_usata}.\n\n"
         "Correggi in modo più robusto con prepared statements (PDO o MySQLi). "
-        "Restituisci l'INTERO file modificato. "
-        "IMPORTANTE: scrivi SOLO codice PHP puro, zero spiegazioni, zero markdown."
+        "Genera una nuova patch in formato Unified Diff standard (usando i prefissi --- low.php e +++ low.php) che si applichi al codice originale. "
+        "IMPORTANTE: Nel diff, mantieni ESATTAMENTE tutte le righe di contesto originali (inclusi tutti i commenti che iniziano con # o //, le righe vuote e gli spazi/tabulazioni originali). Non omettere MAI righe commentate (come quelle con #) o righe vuote se sono all'interno della sezione che stai modificando, altrimenti lo strumento `patch` fallirà a causa di conflitti. "
+        "Scrivi SOLO il blocco di codice diff unificato (delimitato da ```diff), zero spiegazioni, zero testo extra."
     )
 
 

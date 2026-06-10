@@ -91,3 +91,20 @@ class AgentState(TypedDict):
     # ── Judge Patch ──────────────────────────────────────────────────────────
     judge_patch: JudgePatchResult
     """LLM reasoning output from node_judge_patch."""
+
+    # ── Metriche di Valutazione ──────────────────────────────────────────────
+    num_diff_applicati_successo: int
+    """Numero di patch (diff) applicate con successo (senza conflitti)."""
+
+    num_test_funzionali_passati: int
+    """Numero di tentativi in cui i test di regressione funzionale sono passati."""
+
+    num_errori_sintassi: int
+    """Numero totale di errori di sintassi PHP riscontrati (PHP linting)."""
+
+    dettagli_sintassi: list[str]
+    """Lista dei dettagli degli errori di sintassi rilevati durante le run."""
+
+    dettagli_applicazione: list[str]
+    """Lista delle descrizioni degli errori riscontrati durante l'applicazione delle patch."""
+

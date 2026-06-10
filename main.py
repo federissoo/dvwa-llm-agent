@@ -27,11 +27,9 @@ def _check_prerequisites() -> None:
     """Validate environment before invoking the graph."""
     if not PHPSESSID or PHPSESSID in {"INSERISCI_QUI", ""}:
         print(
-            "❌  PHPSESSID non configurato.\n"
-            "    Apri api_keys.env e incolla il valore del cookie PHPSESSID\n"
-            "    (disponibile dopo il login su http://localhost:4280)."
+            "ℹ️   PHPSESSID non configurato.\n"
+            "    Verrà eseguito il reset automatico ed il login su http://localhost:4280."
         )
-        sys.exit(1)
 
     provider = os.getenv("LLM_PROVIDER", "openai").lower()
     if provider == "groq":
@@ -99,6 +97,11 @@ def main() -> None:
             "problemi": "",
             "motivazione": "",
         },
+        "num_diff_applicati_successo": 0,
+        "num_test_funzionali_passati": 0,
+        "num_errori_sintassi": 0,
+        "dettagli_sintassi": [],
+        "dettagli_applicazione": [],
     }
 
     final_state: AgentState = graph.invoke(initial_state)
@@ -113,6 +116,40 @@ def main() -> None:
     print(f"   Sessione scaduta      : {final_state.get('sessione_scaduta', False)}")
     print(f"   Patch applicata       : {final_state.get('patch_applicata', False)}")
     print(f"   Tentativi patch       : {final_state.get('tentativo_patch', 0)}")
+
+    # ── Metriche Richieste da CLAUDE.md ──────────────────────────────────────
+    tentativi_patch_tot = final_state.get("tentativo_patch", 0)
+    final_functional = final_state.get("judge_patch", {}).get("funzionale", False)
+    
+    exploit_blocking_rate = 100.0 if (tentativi_patch_tot > 0 and final_functional) else 0.0
+    
+    num_passati = final_state.get("num_test_funzionali_passati", 0)
+    preservation_rate = (num_passati / tentativi_patch_tot * 100) if tentativi_patch_tot > 0 else 0.0
+    
+    num_diff_applicati = final_state.get("num_diff_applicati_successo", 0)
+    patch_applicability = (num_diff_applicati / tentativi_patch_tot * 100) if tentativi_patch_tot > 0 else 0.0
+    
+    num_errors = final_state.get("num_errori_sintassi", 0)
+    llm_iterations = tentativi_patch_tot
+
+    print("\n📊  METRICHE VALUTAZIONE (CLAUDE.md)")
+    print(f"   Exploit Blocking Rate          : {exploit_blocking_rate:.1f}%")
+    print(f"   Preservation of Business Logic : {preservation_rate:.1f}%")
+    print(f"   Patch Applicability            : {patch_applicability:.1f}%")
+    print(f"   Syntax & Runtime Errors        : {num_errors} fallimenti")
+    print(f"   LLM Iterations                 : {llm_iterations}")
+
+    dettagli_app = final_state.get("dettagli_applicazione", [])
+    if dettagli_app:
+        print("\n⚠️   Dettagli Conflitti Applicazione Patch:")
+        for err in dettagli_app:
+            print(f"     - {err}")
+
+    dettagli_sint = final_state.get("dettagli_sintassi", [])
+    if dettagli_sint:
+        print("\n⚠️   Dettagli Errori Sintassi PHP:")
+        for err in dettagli_sint:
+            print(f"     - {err}")
 
     judge_a = final_state.get("judge_attacco", {})
     if judge_a and judge_a.get("motivazione"):

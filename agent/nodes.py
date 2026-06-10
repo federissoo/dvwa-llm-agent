@@ -16,6 +16,7 @@ Node responsibilities:
 import json
 import os
 import re
+import subprocess
 import time
 from pathlib import Path
 
@@ -162,6 +163,304 @@ def _parse_json_response(raw: str) -> dict:
     return json.loads(clean)
 
 
+def _extract_unified_diff(text: str) -> str:
+    """Extracts the Unified Diff block from the LLM output."""
+    # Remove thought tags
+    text = re.sub(r"<thought>.*?</thought>", "", text, flags=re.DOTALL)
+    text = re.sub(r".*?</thought>", "", text, flags=re.DOTALL)
+    
+    # Strip markdown fences if present
+    if "```diff" in text:
+        text = text.split("```diff")[1].split("```")[0]
+    elif "```patch" in text:
+        text = text.split("```patch")[1].split("```")[0]
+    elif "```php" in text:
+        text = text.split("```php")[1].split("```")[0]
+    elif "```" in text:
+        text = text.split("```")[1].split("```")[0]
+        
+    text = text.strip()
+    
+    # Locate where the actual diff structure starts (--- or +++ or @@ or diff --git)
+    lines = text.splitlines()
+    diff_lines = []
+    started = False
+    for line in lines:
+        if line.startswith("---") or line.startswith("+++") or line.startswith("@@") or line.startswith("diff --git"):
+            started = True
+        if started:
+            diff_lines.append(line)
+            
+    if not diff_lines:
+        return text
+        
+    return "\n".join(diff_lines)
+
+
+def _recalculate_diff_hunk_headers(diff_content: str) -> str:
+    """
+    Parses a unified diff and corrects the line counts in the hunk headers (@@ -start,len +start,len @@).
+    LLMs frequently count the number of lines incorrectly, which causes the 'patch' command to fail.
+    """
+    lines = diff_content.splitlines()
+    new_lines = []
+    
+    hunk_lines = []
+    current_header = None
+    
+    def process_hunk(header: str, h_lines: list[str]) -> str:
+        # Match @@ -old_start[,old_len] +new_start[,new_len] @@
+        match = re.match(r"^@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@(.*)$", header)
+        if not match:
+            return header
+        old_start = int(match.group(1))
+        new_start = int(match.group(2))
+        suffix = match.group(3)
+        
+        # Count lines
+        old_len = 0
+        new_len = 0
+        for line in h_lines:
+            if line.startswith("-"):
+                old_len += 1
+            elif line.startswith("+"):
+                new_len += 1
+            else:
+                # Context line (starts with space)
+                old_len += 1
+                new_len += 1
+                
+        return f"@@ -{old_start},{old_len} +{new_start},{new_len} @@{suffix}"
+
+    for line in lines:
+        if line.startswith("@@"):
+            if current_header:
+                new_lines.append(process_hunk(current_header, hunk_lines))
+                new_lines.extend(hunk_lines)
+                hunk_lines = []
+            current_header = line
+        elif current_header is not None:
+            hunk_lines.append(line)
+        else:
+            new_lines.append(line)
+            
+    if current_header:
+        new_lines.append(process_hunk(current_header, hunk_lines))
+        new_lines.extend(hunk_lines)
+        
+    return "\n".join(new_lines)
+
+
+def _find_first_context_line_num(cleaned_lines: list[str], original_code: str) -> int:
+    # Find the first line that is a context line (not diff metadata and not starting with - or +)
+    first_context = None
+    for line in cleaned_lines:
+        if line.startswith("---") or line.startswith("+++") or line.startswith("@@") or line.startswith("diff --git"):
+            continue
+        if not line.startswith("-") and not line.startswith("+"):
+            # Context line!
+            first_context = line.strip()
+            if first_context:
+                break
+                
+    if not first_context:
+        return 1
+        
+    # Find this line in original_code
+    orig_lines = original_code.splitlines()
+    for idx, orig_line in enumerate(orig_lines):
+        if first_context in orig_line:
+            return idx + 1 # 1-based line number
+            
+    return 1
+
+
+def _apply_patch(target_file: Path, diff_content: str, original_code: str) -> tuple[bool, str]:
+    """
+    Applies the unified diff content to the target file using 'patch -t'.
+    Returns (success, error_message).
+    """
+    # Clean diff content from leading spaces or stray characters
+    lines = diff_content.splitlines()
+    cleaned_lines = []
+    started_diff = False
+    for line in lines:
+        if line.startswith("---") or line.startswith("+++") or line.startswith("@@") or line.startswith("diff --git") or line.startswith(" ") or line.startswith("-") or line.startswith("+"):
+            started_diff = True
+        if started_diff:
+            cleaned_lines.append(line)
+            
+    # Check if hunk header @@ is missing
+    has_hunk_header = any(l.startswith("@@") for l in cleaned_lines)
+    if not has_hunk_header:
+        # Recalculate start line from first context line
+        start_line = _find_first_context_line_num(cleaned_lines, original_code)
+        
+        # Prepend a dummy hunk header
+        new_lines = []
+        inserted = False
+        for line in cleaned_lines:
+            new_lines.append(line)
+            if line.startswith("+++") and not inserted:
+                new_lines.append(f"@@ -{start_line},1 +{start_line},1 @@")
+                inserted = True
+        if not inserted:
+            new_lines.insert(0, f"@@ -{start_line},1 +{start_line},1 @@")
+        cleaned_lines = new_lines
+
+    diff_content = "\n".join(cleaned_lines)
+
+    # Fix LLM line counting errors in hunk headers
+    diff_content = _recalculate_diff_hunk_headers(diff_content)
+
+    diff_file = target_file.parent / "temp_patch.diff"
+    
+    # Make sure we have the --- and +++ headers, prepending if missing
+    has_headers = any(l.startswith("---") for l in cleaned_lines[:3]) and any(l.startswith("+++") for l in cleaned_lines[:3])
+    if not has_headers:
+        diff_content = f"--- {target_file.name}\n+++ {target_file.name}\n" + diff_content
+        
+    diff_file.write_text(diff_content, encoding="utf-8")
+    try:
+        # Run patch tool inside the target directory using the relative filename
+        res = subprocess.run(
+            ["patch", "-t", "-l", target_file.name, str(diff_file)],
+            cwd=str(target_file.parent),
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if res.returncode == 0:
+            return True, ""
+        else:
+            err = res.stderr or res.stdout or "Diff application failed (conflict)"
+            return False, err
+    except Exception as e:
+        return False, str(e)
+    finally:
+        if diff_file.exists():
+            diff_file.unlink()
+
+
+def _lint_php_file(file_path: Path) -> tuple[bool, str]:
+    """Runs php -l to perform syntax validation on the file."""
+    for php_cmd in ["php", "/opt/homebrew/bin/php"]:
+        try:
+            res = subprocess.run(
+                [php_cmd, "-l", str(file_path)],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if res.returncode == 0:
+                return True, ""
+            else:
+                return False, res.stdout or res.stderr or "Syntax check failed"
+        except FileNotFoundError:
+            continue
+        except Exception as e:
+            return False, str(e)
+    return True, "PHP interpreter not found, skipping syntax check"
+
+
+def login_to_dvwa(session: requests.Session) -> bool:
+    """
+    Logs in to DVWA programmatically using standard credentials (admin/password)
+    and updates the session.
+    """
+    login_url = "http://127.0.0.1:4280/login.php"
+    print("🔑 [LOGIN] Autenticazione in corso su DVWA (admin/password)...")
+    try:
+        # 1. GET login page to obtain the user_token
+        res = session.get(login_url, timeout=5)
+        token_match = re.search(r"name=['\"]user_token['\"]\s+value=['\"]([a-f0-9]+)['\"]", res.text)
+        token = token_match.group(1) if token_match else None
+        
+        # 2. POST to login
+        data = {
+            "username": "admin",
+            "password": "password",
+            "Login": "Login"
+        }
+        if token:
+            data["user_token"] = token
+            
+        res2 = session.post(login_url, data=data, timeout=5)
+        if "login.php" not in res2.url:
+            print("✅ [LOGIN] Autenticato con successo.")
+            return True
+        else:
+            print("⚠️ [LOGIN] Autenticazione fallita: reindirizzato a login.php.")
+            return False
+    except Exception as e:
+        print(f"❌ [LOGIN] Errore durante l'autenticazione: {e}")
+        return False
+
+
+def reset_dvwa_database() -> bool:
+    """
+    Resets the DVWA database via setup.php, and logs back in to obtain
+    a valid authenticated PHPSESSID session.
+    """
+    global PHPSESSID
+    setup_url = "http://127.0.0.1:4280/setup.php"
+    print("\n🔄 [RESET DATABASE] Ripristino del database DVWA...")
+    session = requests.Session()
+    try:
+        # 1. GET setup.php anonymously to get CSRF token
+        res = session.get(setup_url, timeout=5)
+        token_match = re.search(r"name=['\"]user_token['\"]\s+value=['\"]([a-f0-9]+)['\"]", res.text)
+        token = token_match.group(1) if token_match else None
+        
+        # 2. POST to reset database
+        data = {"create_db": "Create / Reset Database"}
+        if token:
+            data["user_token"] = token
+            
+        res2 = session.post(setup_url, data=data, timeout=5)
+        
+        # Wait a moment for database creation
+        time.sleep(1)
+        
+        # 3. Log in to establish the authenticated session
+        if login_to_dvwa(session):
+            new_sessid = session.cookies.get("PHPSESSID")
+            if new_sessid:
+                PHPSESSID = new_sessid
+                print(f"🔑 [RESET DATABASE] Sessione aggiornata con PHPSESSID: {PHPSESSID}")
+                return True
+        
+        print("⚠️ [RESET DATABASE] Reset completato ma login fallito.")
+        return False
+    except Exception as e:
+        print(f"❌ [RESET DATABASE] Errore durante il reset del database: {e}")
+        return False
+
+
+def _run_regression_test() -> tuple[bool, str]:
+    """Runs functional regression testing checking if legitimate business logic is preserved."""
+    cookies = {"PHPSESSID": PHPSESSID, "security": "low"}
+    params = {"id": "1", "Submit": "Submit"}
+    try:
+        res = requests.get(DVWA_SQLI_URL, params=params, cookies=cookies, timeout=5)
+        if "login.php" in res.url:
+            return False, "Session expired (redirected to login.php)"
+            
+        # Check for DB errors
+        db_errors = ["sql syntax", "mysqli_error", "sqlite3 exception", "database error"]
+        res_lower = res.text.lower()
+        for err in db_errors:
+            if err in res_lower:
+                return False, f"Database error detected in response: {err}"
+                
+        if "First name: admin" in res.text:
+            return True, ""
+        else:
+            return False, "Legitimate functionality broken: 'First name: admin' not found in response for id=1"
+    except Exception as e:
+        return False, f"Regression test failed with exception: {e}"
+
+
 # ---------------------------------------------------------------------------
 # Nodes
 # ---------------------------------------------------------------------------
@@ -188,6 +487,10 @@ def node_init(state: AgentState) -> dict:
         }
     codice = PATH_FILE_VULNERABILE.read_text(encoding="utf-8")
     print(f"✅ [INIT] File letto ({len(codice)} caratteri).")
+
+    # Resetta il database all'avvio per garantire esperimenti puliti
+    reset_dvwa_database()
+
     return {"codice_originale": codice}
 
 
@@ -361,16 +664,19 @@ def node_feedback_attacco(state: AgentState) -> dict:
 
 def node_blue_team(state: AgentState) -> dict:
     """
-    Blue Team node — generates a secure PHP patch using prepared statements.
+    Blue Team node — generates a secure PHP patch in Unified Diff format,
+    applies it, and lints the result.
 
-    Always reads ``state["codice_originale"]`` (set by ``node_init``) as the
-    base — never reads the file from disk, which may already contain a broken
-    prior patch.
+    Always restores and reads ``state["codice_originale"]`` as the base —
+    never reads the file from disk, which may already contain a broken prior patch.
 
     Increments ``tentativo_patch`` on each call.
 
-    Input state keys used:  codice_originale, payload, judge_attacco, tentativo_patch
-    Output state keys:      patch_applicata, tentativo_patch
+    Input state keys used:  codice_originale, payload, judge_attacco, tentativo_patch,
+                            num_diff_applicati_successo, num_errori_sintassi,
+                            dettagli_sintassi, dettagli_applicazione
+    Output state keys:      patch_applicata, tentativo_patch, num_diff_applicati_successo,
+                            num_errori_sintassi, dettagli_sintassi, dettagli_applicazione
     """
     tentativo_patch: int = state.get("tentativo_patch", 0)
     print(f"\n🔵 [BLUE TEAM] Generazione patch (tentativo {tentativo_patch + 1})...")
@@ -379,6 +685,10 @@ def node_blue_team(state: AgentState) -> dict:
     if not codice_originale:
         print("❌ [BLUE TEAM] codice_originale vuoto — impossibile generare patch.")
         return {"patch_applicata": False, "tentativo_patch": tentativo_patch + 1}
+
+    # Ripristina sempre il file al codice originale pulito prima di applicare la patch
+    PATH_FILE_VULNERABILE.write_text(codice_originale, encoding="utf-8")
+    time.sleep(1)  # synchronise with disk/Docker mount
 
     judge: dict = state.get("judge_attacco", {})
     tecnica_usata: str = judge.get("tecnica_usata", "SQL Injection")
@@ -394,13 +704,56 @@ def node_blue_team(state: AgentState) -> dict:
         HumanMessage(content=prompt),
     ])
 
-    codice_patchato: str = _strip_markdown_fences(response.content)
+    diff_content: str = _extract_unified_diff(response.content)
+    print(f"🔵 [BLUE TEAM] Estratto Unified Diff per l'applicazione:\n{diff_content}\n---")
 
-    PATH_FILE_VULNERABILE.write_text(codice_patchato, encoding="utf-8")
-    print("🔵 [BLUE TEAM] low.php patchato su disco.")
+    # Recupera i contatori correnti dallo stato
+    diff_successo = state.get("num_diff_applicati_successo", 0)
+    errori_sintassi = state.get("num_errori_sintassi", 0)
+    lista_sintassi = list(state.get("dettagli_sintassi", []))
+    lista_applicazione = list(state.get("dettagli_applicazione", []))
+
+    # Tenta l'applicazione del diff unificato
+    success_patch, err_patch = _apply_patch(PATH_FILE_VULNERABILE, diff_content, codice_originale)
+
+    if not success_patch:
+        print(f"❌ [BLUE TEAM] Applicazione della patch fallita (conflitto): {err_patch}")
+        lista_applicazione.append(f"Tentativo {tentativo_patch + 1}: {err_patch}")
+        return {
+            "patch_applicata": False,
+            "tentativo_patch": tentativo_patch + 1,
+            "dettagli_applicazione": lista_applicazione,
+        }
+
+    # Patch applicata con successo sul file
+    print("✅ [BLUE TEAM] Patch (diff) applicata con successo.")
+    diff_successo += 1
     time.sleep(2)  # allow Docker volume to sync
 
-    return {"patch_applicata": True, "tentativo_patch": tentativo_patch + 1}
+    # Esegui PHP Linting check
+    success_lint, err_lint = _lint_php_file(PATH_FILE_VULNERABILE)
+    if not success_lint:
+        print(f"❌ [BLUE TEAM] Errore di sintassi PHP (Linting fallito): {err_lint}")
+        errori_sintassi += 1
+        lista_sintassi.append(f"Tentativo {tentativo_patch + 1}: {err_lint}")
+        return {
+            "patch_applicata": False,
+            "tentativo_patch": tentativo_patch + 1,
+            "num_diff_applicati_successo": diff_successo,
+            "num_errori_sintassi": errori_sintassi,
+            "dettagli_sintassi": lista_sintassi,
+            "dettagli_applicazione": lista_applicazione,
+        }
+
+    print("✅ [BLUE TEAM] Controllo sintassi PHP superato con successo.")
+    return {
+        "patch_applicata": True,
+        "tentativo_patch": tentativo_patch + 1,
+        "num_diff_applicati_successo": diff_successo,
+        "num_errori_sintassi": errori_sintassi,
+        "dettagli_sintassi": lista_sintassi,
+        "dettagli_applicazione": lista_applicazione,
+    }
 
 
 def node_feedback_patch(state: AgentState) -> dict:
@@ -435,22 +788,48 @@ def node_feedback_patch(state: AgentState) -> dict:
 
 def node_valida_patch(state: AgentState) -> dict:
     """
-    Patch validation node — re-executes the attack against the patched code.
+    Patch validation node — re-executes the attack against the patched code
+    and runs a functional regression test to verify that legitimate business
+    logic is preserved, resetting the database beforehand.
 
-    Delegates entirely to ``node_esegui_attacco`` (pure HTTP call) and
-    derives ``patch_efficace`` from the result.
-
-    Input state keys used:  payload (and transitively PHPSESSID via env)
-    Output state keys:      risposta_http_raw, attacco_successo, sessione_scaduta
+    Input state keys used:  payload, num_test_funzionali_passati
+    Output state keys:      risposta_http_raw, attacco_successo, sessione_scaduta,
+                            num_test_funzionali_passati
     """
-    print("\n🔄 [VALIDAZIONE] Red team riprova l'attacco sul codice patchato...")
+    print("\n🔄 [VALIDAZIONE] Inizio validazione patch (Dual-Verification)...")
+
+    # Recupera il contatore corrente dallo stato
+    funzionali_passati = state.get("num_test_funzionali_passati", 0)
+
+    # 1. Reset database to ensure reproducible validation tests
+    reset_dvwa_database()
+
+    # 2. Security Test: Re-run the offensive payload
+    print("\n🔄 [VALIDAZIONE] 1/2. Esecuzione Security Test (exploit)...")
     risultato: dict = node_esegui_attacco(state)
 
-    if not risultato["attacco_successo"]:
-        print("✅ PATCH EFFICACE: attaccante respinto.")
-    else:
-        print("❌ PATCH FALLITA: il codice è ancora vulnerabile!")
+    # 3. Functional Regression Test: Verify legitimate application behaviour
+    print("\n🔄 [VALIDAZIONE] 2/2. Esecuzione Functional Regression Test...")
+    success_reg, err_reg = _run_regression_test()
 
+    if success_reg:
+        print("✅ REGRESSIONE FUNZIONALE: Le funzionalità legittime dell'applicazione funzionano correttamente.")
+        funzionali_passati += 1
+    else:
+        print(f"❌ REGRESSIONE FUNZIONALE FALLITA: {err_reg}")
+        # Se le funzionalità legittime si rompono, la patch non è valida.
+        # Forziamo attacco_successo=True per indicare fallimento della patch nel grafo.
+        risultato["attacco_successo"] = True
+        risultato["risposta_http_raw"] = (
+            f"ERRORE REGRESSIONE: {err_reg}\n\n" + risultato.get("risposta_http_raw", "")
+        )[:2000]
+
+    if not risultato["attacco_successo"] and success_reg:
+        print("✅ VALIDAZIONE COMPLETATA: La patch ha superato con successo entrambi i test!")
+    else:
+        print("❌ VALIDAZIONE COMPLETATA: La patch ha fallito i test di sicurezza o funzionali.")
+
+    risultato["num_test_funzionali_passati"] = funzionali_passati
     return risultato
 
 
@@ -553,13 +932,10 @@ def decide_dopo_blue_team(state: AgentState) -> str:
     """
     Route after node_blue_team.
 
-    Returns:
-        'valida_patch' — Patch was written to disk.
-        'END'          — Patch generation failed.
+    Always routes to 'valida_patch' to allow validation (and subsequent retries)
+    even if patch application or compilation linting failed.
     """
-    from langgraph.graph import END
-
-    return "valida_patch" if state.get("patch_applicata", False) else END
+    return "valida_patch"
 
 
 def decide_dopo_judge_patch(state: AgentState) -> str:
