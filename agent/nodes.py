@@ -3,14 +3,14 @@ agent/nodes.py — All LangGraph node functions for the DVWA multi-agent pipelin
 
 Node responsibilities:
     node_init           — Reads vulnerable PHP file once; stores in state.
-    node_red_team       — Generates SQL injection payloads via LLM (gpt-4o-mini).
+    node_red_team       — Generates SQL injection payloads via LLM.
     node_esegui_attacco — Pure HTTP function; establishes attack success fact.
-    node_judge_attacco  — LLM reasoning about attack (gpt-4o-mini); does NOT decide fact.
+    node_judge_attacco  — LLM reasoning about attack; does NOT decide fact.
     node_feedback_attacco — Injects failure feedback into red team message history.
-    node_blue_team      — Generates PHP patch from codice_originale (gpt-4o-mini).
+    node_blue_team      — Generates PHP patch from codice_originale.
     node_feedback_patch — Injects patch failure feedback for blue team retry.
     node_valida_patch   — Re-runs HTTP attack to verify patch effectiveness.
-    node_judge_patch    — LLM reasoning about patch quality (gpt-4o-mini).
+    node_judge_patch    — LLM reasoning about patch quality.
 """
 
 import json
@@ -98,8 +98,8 @@ elif llm_provider == "gemini":
         temperature=0.0,
     )
 else:
-    llm: ChatOpenAI = ChatOpenAI(model="gpt-4o-mini", temperature=0.0)
-    llm_judge: ChatOpenAI = ChatOpenAI(model="gpt-4o-mini", temperature=0.0)
+    llm: ChatOpenAI = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.0)
+    llm_judge: ChatOpenAI = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.0)
 
 
 # ---------------------------------------------------------------------------
