@@ -88,6 +88,10 @@ class AgentState(TypedDict):
     tentativo_patch: int
     """Current patch attempt counter (starts at 0, incremented in node_blue_team)."""
 
+    # ── Validation ────────────────────────────────────────────────────────────
+    regression_test_passed: bool
+    """True if the functional regression tests passed after patching."""
+
     # ── Judge Patch ──────────────────────────────────────────────────────────
     judge_patch: JudgePatchResult
     """LLM reasoning output from node_judge_patch."""

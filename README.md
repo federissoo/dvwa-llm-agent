@@ -43,7 +43,7 @@ graph TD
 | 3 | `node_esegui_attacco` | Invia il payload a DVWA via HTTP; conta `First name:` per determinare l'esito | — |
 | 4 | `node_judge_attacco` | Ragiona sul perché l'attacco ha funzionato/fallito; fornisce tecnica e suggerimenti | LLM configurato |
 | 5 | `node_feedback_attacco` | Inietta feedback del judge nello storico messaggi del red team | — |
-| 6 | `node_blue_team` | Genera una patch in formato **Unified Diff**, ripristina il codice originale, la applica su disco ed esegue il controllo di sintassi PHP (`php -l`) | LLM configurato |
+| 6 | `node_blue_team` | Chiede all'LLM il file PHP intero corretto, lo scrive su disco, calcola il diff con `difflib` per il report ed esegue il controllo di sintassi PHP (`php -l`) | LLM configurato |
 | 7 | `node_feedback_patch` | Inietta problemi rilevati dal judge nella prossima iterazione del blue team | — |
 | 8 | `node_valida_patch` | Resetta il DB e ri-esegue sia il **Security Test** (exploit) che il **Functional Regression Test** (business logic) per validare la patch | — |
 | 9 | `node_judge_patch` | Valuta la qualità del codice patchato ed esprime il giudizio finale di conformità | LLM configurato |
@@ -61,7 +61,6 @@ cd dvwa-llm-agent
 cp api_keys.env.example api_keys.env
 # Modifica api_keys.env:
 #   - OPENAI_API_KEY → chiave OpenAI (o impostare LLM_PROVIDER su groq/gemini con relative chiavi)
-#   - PHPSESSID → (Opzionale) Se vuoto o omesso, il sistema esegue il login automatico in autonomia
 
 # 3. Avvia DVWA (se non è già attivo localmente su 127.0.0.1:4280)
 docker compose up -d
@@ -70,7 +69,7 @@ docker compose up -d
 python main.py
 ```
 
-> **Nota sulla Sessione**: Il sistema include un meccanismo di login automatico. All'avvio e ad ogni reset del database, l'agente effettua automaticamente il login con le credenziali standard (`admin` / `password`) per rigenerare e mantenere aggiornato il cookie `PHPSESSID`. Non è quindi richiesta alcuna operazione manuale di copia del cookie dal browser.
+> **Nota sulla sessione**: il cookie `PHPSESSID` non è configurabile tramite `.env`. All'avvio e dopo ogni reset del database, l'agente effettua automaticamente il login con le credenziali standard (`admin` / `password`) e conserva il nuovo cookie esclusivamente in memoria per la durata della run.
 
 ---
 
@@ -131,11 +130,11 @@ dvwa-llm-agent/
 │   ├── state.py            # AgentState, JudgeAttaccoResult, JudgePatchResult
 │   ├── prompts.py          # Tutte le stringhe di prompt come funzioni tipizzate
 │   ├── nodes.py            # Tutti i nodi e le conditional edge functions
-│   └── graph.py            # Costruzione e compilazione del grafo
+│   ├── graph.py            # Costruzione e compilazione del grafo
+│   └── dvwa_client.py      # Client HTTP per interazione con DVWA
 ├── tests/
 │   └── test_judges.py      # Unit test per i due judge (pytest + mock)
 ├── main.py                 # Entrypoint CLI
-├── docker-compose.yml      # Avvia DVWA su 127.0.0.1:4280
 ├── requirements.txt        # Dipendenze con versioni minime
 ├── api_keys.env.example    # Template variabili d'ambiente
 └── README.md               # Questo file

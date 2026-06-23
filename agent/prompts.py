@@ -52,31 +52,6 @@ def prompt_feedback_attacco(log_attacco: str) -> str:
     )
 
 
-def prompt_feedback_attacco_con_judge(
-    motivazione: str,
-    tecnica_usata: str,
-    suggerimento: str,
-) -> str:
-    """
-    Feedback message for the red team enriched with judge analysis.
-
-    Args:
-        motivazione:   Judge's explanation of why the attack failed.
-        tecnica_usata: Name/description of the SQLi technique detected.
-        suggerimento:  Improvement suggestion from the judge.
-
-    Returns:
-        Formatted human message string to append to the conversation.
-    """
-    return (
-        f"Il tuo attacco è fallito.\n\n"
-        f"Analisi: {motivazione}\n"
-        f"Tecnica rilevata: {tecnica_usata}\n"
-        f"Suggerimento: {suggerimento}\n\n"
-        "Genera un nuovo payload. Scrivi SOLO il payload."
-    )
-
-
 # ---------------------------------------------------------------------------
 # Judge Attacco prompt
 # ---------------------------------------------------------------------------
@@ -118,7 +93,7 @@ Restituisci SOLO un JSON (nessun testo prima o dopo):
 # ---------------------------------------------------------------------------
 
 BLUE_TEAM_SYSTEM = (
-    "Sei un esperto di Secure Coding in PHP. Restituisci solo patch valide in formato Unified Diff."
+    "Sei un esperto di Secure Coding in PHP. Restituisci SOLO il file PHP corretto completo, nessuna spiegazione."
 )
 
 
@@ -143,9 +118,7 @@ def prompt_blue_team(
         f"Codice vulnerabile:\n```php\n{codice_originale}\n```\n\n"
         f"Payload usato: {payload}. Tecnica: {tecnica_usata}.\n\n"
         "Correggi con prepared statements (PDO o MySQLi). "
-        "Genera e restituisci una patch in formato Unified Diff standard (usando i prefissi --- low.php e +++ low.php). "
-        "IMPORTANTE: Nel diff, mantieni ESATTAMENTE tutte le righe di contesto originali (inclusi tutti i commenti che iniziano con # o //, le righe vuote e gli spazi/tabulazioni originali). Non omettere MAI righe commentate (come quelle con #) o righe vuote se sono all'interno della sezione che stai modificando, altrimenti lo strumento `patch` fallirà a causa di conflitti. "
-        "Scrivi SOLO il blocco di codice diff unificato (delimitato da ```diff), zero spiegazioni, zero testo extra."
+        "Restituisci il file PHP intero corretto (delimitato da ```php), zero spiegazioni, zero testo extra."
     )
 
 
@@ -176,9 +149,7 @@ def prompt_feedback_patch(
         f"Riparti dal codice originale vulnerabile:\n```php\n{codice_originale}\n```\n\n"
         f"Payload che ha bypassato la patch: {payload}. Tecnica: {tecnica_usata}.\n\n"
         "Correggi in modo più robusto con prepared statements (PDO o MySQLi). "
-        "Genera una nuova patch in formato Unified Diff standard (usando i prefissi --- low.php e +++ low.php) che si applichi al codice originale. "
-        "IMPORTANTE: Nel diff, mantieni ESATTAMENTE tutte le righe di contesto originali (inclusi tutti i commenti che iniziano con # o //, le righe vuote e gli spazi/tabulazioni originali). Non omettere MAI righe commentate (come quelle con #) o righe vuote se sono all'interno della sezione che stai modificando, altrimenti lo strumento `patch` fallirà a causa di conflitti. "
-        "Scrivi SOLO il blocco di codice diff unificato (delimitato da ```diff), zero spiegazioni, zero testo extra."
+        "Restituisci il file PHP intero corretto (delimitato da ```php), zero spiegazioni, zero testo extra."
     )
 
 

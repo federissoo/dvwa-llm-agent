@@ -1,8 +1,0 @@
-services:
-  dvwa:
-    image: ghcr.io/digininja/dvwa:latest
-    ports:
-      - "127.0.0.1:4280:80"
-    environment:
-      - DEFAULT_SECURITY_LEVEL=low
-    restart: unless-stopped

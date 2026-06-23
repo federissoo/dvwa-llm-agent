@@ -42,7 +42,7 @@ def _end_sessione(state: AgentState) -> dict:
     """Terminal node — prints a clear error and exits the graph cleanly."""
     msg = state.get("risposta_http_raw", "Sessione scaduta o file non trovato.")
     print(f"\n🛑 [FINE] Terminazione forzata: {msg}")
-    print("   → Aggiorna PHPSESSID in api_keys.env e riavvia.")
+    print("   → Verifica che DVWA sia raggiungibile e che il login automatico funzioni.")
     return {}
 
 

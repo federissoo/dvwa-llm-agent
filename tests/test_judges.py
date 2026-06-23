@@ -66,11 +66,16 @@ def _base_state_attacco(attacco_successo: bool) -> dict:
     }
 
 
-def _base_state_patch(attacco_successo: bool, tentativo_patch: int = 0) -> dict:
+def _base_state_patch(
+    attacco_successo: bool,
+    tentativo_patch: int = 0,
+    regression_test_passed: bool = True,
+) -> dict:
     state = _base_state_attacco(attacco_successo=False)
     state["attacco_successo"] = attacco_successo
     state["tentativo_patch"] = tentativo_patch
     state["patch_applicata"] = True
+    state["regression_test_passed"] = regression_test_passed
     return state
 
 
@@ -255,6 +260,33 @@ class TestJudgePatch:
             f"Expected END but got '{routing}'. "
             "With tentativo_patch >= MAX_TENTATIVI_PATCH the graph must terminate."
         )
+
+    @patch.object(agent.nodes, "PATH_FILE_VULNERABILE")
+    @patch.object(agent.nodes, "llm_judge")
+    def test_judge_patch_regression_failure(self, mock_llm_judge, mock_path):
+        """Attack blocked but regression failed → funzionale=False."""
+        mock_path.exists.return_value = True
+        mock_path.read_text.return_value = "<?php $stmt = $pdo->prepare('?'); ?>"
+
+        json_payload = json.dumps({
+            "funzionale": True,
+            "qualita_codice": "ottima",
+            "problemi": "nessuno",
+            "motivazione": "La patch usa prepared statements.",
+        })
+        mock_llm_judge.invoke.return_value = _make_mock_response(json_payload)
+
+        # Attack blocked (attacco_successo=False) but regression failed
+        state = _base_state_patch(
+            attacco_successo=False, regression_test_passed=False
+        )
+        result = node_judge_patch(state)
+
+        assert result["judge_patch"]["funzionale"] is False, (
+            "With regression_test_passed=False, patch must be non-functional "
+            "even if the attack was blocked"
+        )
+        assert result["patch_applicata"] is False
 
     @patch.object(agent.nodes, "PATH_FILE_VULNERABILE")
     @patch.object(agent.nodes, "llm_judge")

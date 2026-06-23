@@ -1,0 +1,69 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+\usepackage{geometry}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{hyperref}
+
+\geometry{margin=25mm}
+
+\title{\textbf{Final Report: Automated Security Testing and Patching Workflow using LLMs}}
+\author{Federico Rissolio 5241314}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Motivation}
+Finding web vulnerabilities and writing security patches manually is highly time-consuming. Traditional tools excel at reporting issues but do not resolve them. This project investigates whether Large Language Models (LLMs) can automate the entire cycle: discovering flaws through simulated attacks, generating corrective patches, and immediately verifying whether the patch successfully secures the application.
+
+\section{AI-Augmented Software Engineering Topic}
+The project falls within the area of \textbf{AI-assisted DevSecOps}. Specifically, it combines the use of LLMs for offensive security analysis (vulnerability discovery) and defensive engineering (automated security patch generation).
+
+\section{Project Goal}
+The practical goal was to develop a LangGraph prototype that automates the iterative loop: \textbf{Attack $\rightarrow$ Success Verification $\rightarrow$ Patching $\rightarrow$ Follow-up Control Attack}. 
+The research goal was to evaluate whether the patches produced by the AI are genuinely secure and functional without breaking the original application's business logic.
+
+\section{Investigated Approach and Experimental Setup}
+The system targets \textbf{DVWA (Damn Vulnerable Web Application)} running inside a Docker container to ensure an isolated and reproducible testing environment. The orchestration is managed via \textbf{LangGraph} and relies on several specialized nodes:
+\begin{itemize}
+    \item \textbf{Offensive Module (Red Team):} Iteratively generates SQL Injection payloads until the exploit is successful.
+    \item \textbf{Evaluation Module (Judges):} Analyzes HTTP responses to determine whether the attack succeeded or failed, extracting reasoning and techniques.
+    \item \textbf{Defensive Module (Blue Team):} Analyzes the vulnerable source code (\texttt{low.php}) alongside the successful exploit data and generates a patch using the Structured Unified Diff format.
+    \item \textbf{Validation Module:} Resets the database and executes a Dual-Verification test (Security Exploit Test + Functional Regression Test) to confirm the integrity of the patch.
+\end{itemize}
+
+\section{Methodology}
+The project followed a practical, step-by-step approach:
+\begin{enumerate}
+    \item Setup of DVWA on Docker, including automated login and programmatic database reset scripts to ensure a reproducible environment before every validation loop.
+    \item Development of the adversarial pipeline (Red Team vs. Blue Team) focusing on SQL Injection vulnerabilities.
+    \item Implementation of the validation checks: re-attacking the newly patched code and performing functional checks to ensure legitimate requests (e.g., \texttt{id=1}) still return correct data.
+    \item Enforcement of a strict Unified Diff output from the LLM, coupled with an automatic \texttt{php -l} linting phase to catch syntax errors before the patch is applied.
+    \item Collection of key performance metrics evaluating both offensive success and defensive code applicability.
+\end{enumerate}
+
+\section{Experimental Results and Metrics}
+During our tests using Llama-3.3-70b (via Groq), the Red Team successfully bypassed the login via SQL Injection (e.g., \texttt{1' OR '1'='1}). However, evaluating the defensive capabilities revealed challenges in strict patch formatting. The following metrics were collected over the automated iterations:
+
+\begin{itemize}
+    \item \textbf{Exploit Blocking Rate (0.0\%):} The attacks were not mitigated in the final state because the generated patch could not be successfully applied.
+    \item \textbf{Preservation of Business Logic (100.0\%):} Legitimate requests continued to function perfectly when tested, confirming no breaking changes were forcefully introduced.
+    \item \textbf{Patch Applicability (0.0\%):} The LLM struggled with the strict context-matching required by the \texttt{patch} utility. Out of 2 patch attempts, both resulted in rejected hunks (\texttt{1 out of 1 hunks failed}) due to discrepancies in spacing or context lines compared to the original code.
+    \item \textbf{Syntax \& Runtime Errors (0):} No malformed PHP syntax was executed, as the linting and diff applicability filters safely rejected the broken patches.
+    \item \textbf{LLM Iterations (2):} The Blue Team attempted to fix the vulnerability twice, adapting to the feedback provided by the Patch Judge, but ultimately exhausted the maximum allowed retries.
+\end{itemize}
+
+These findings suggest that while LLMs can correctly identify the vulnerability and propose the correct logical fix (e.g., using prepared statements), forcing them to output strict \texttt{Unified Diff} formats suitable for the standard Linux \texttt{patch} utility introduces a significant bottleneck in applicability.
+
+\section{Deliverables}
+The finalized repository (\texttt{dvwa-llm-agent}) contains:
+\begin{itemize}
+    \item \textbf{Source Code:} The Python scripts and LangGraph nodes orchestrating the workflow.
+    \item \textbf{Configuration:} Docker setup and \texttt{api\_keys.env.example} to reproduce the tests.
+    \item \textbf{Documentation:} A detailed \texttt{README.md} explaining the pipeline architecture, nodes, and usage.
+\end{itemize}
+
+\end{document}
