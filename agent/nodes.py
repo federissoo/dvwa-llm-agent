@@ -61,6 +61,9 @@ else:
     else:
         PATH_FILE_VULNERABILE: Path = _path_local
 
+# Report diff — sovrascritto a ogni tentativo di patch, ripulito a ogni nuova run
+PATH_FILE_DIFF: Path = BASE_DIR / "patch_report.diff"
+
 MAX_TENTATIVI: int = 3
 MAX_TENTATIVI_PATCH: int = 2
 
@@ -234,6 +237,8 @@ def node_init(state: AgentState) -> dict:
     codice = PATH_FILE_VULNERABILE.read_text(encoding="utf-8")
     print(f"[INIT] File letto.")
 
+    PATH_FILE_DIFF.unlink(missing_ok=True)
+
     dvwa.reset_database()
 
     return {"codice_originale": codice}
@@ -399,6 +404,7 @@ def node_blue_team(state: AgentState) -> dict:
         }
 
     PATH_FILE_VULNERABILE.write_text(codice_patchato, encoding="utf-8")
+    PATH_FILE_DIFF.write_text(diff_report, encoding="utf-8")
     diff_successo += 1
     print("✅ [BLUE TEAM] File patchato scritto su disco.")
     time.sleep(2)  # allow Docker volume to sync

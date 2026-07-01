@@ -15,7 +15,7 @@ When operating within this repository, you must strictly align your sub-tasks wi
 
 1.  **Vulnerability Discovery:** Analyze the application context/endpoints to generate potential exploit payloads.
 2.  **Vulnerability Confirmation:** Execute payloads against the live DVWA instance and verify success by parsing HTTP responses/logs.
-3.  **Patch Generation:** Analyze the vulnerable source code file alongside the successful exploit data. **The LLM outputs the full corrected source file**, which is written to disk; a unified diff is computed locally via `difflib` purely for reporting/logging.
+3.  **Patch Generation:** Analyze the vulnerable source code file alongside the successful exploit data. **The LLM outputs the full corrected source file**, which is written to disk; a unified diff is computed locally via `difflib` and persisted to `patch_report.diff` (overwritten on every patch attempt, deleted at the start of every run) purely for reporting/logging.
 4.  **Patch Validation:** Lint the patched file (`php -l`) and run the dual-verification testing suite.
 
 ---
@@ -39,7 +39,7 @@ You must log and report the following metrics during experimental runs:
 * **Target Environment:** Dockerized DVWA (`https://github.com/digininja/DVWA/`).
 * **Automation Code:** Python scripts handling the pipeline orchestration.
 * **State Reset:** The database must be automatically reset/restored to a clean state before validation loops to ensure reproducible experiments.
-* **Output Requirements:** The Blue Team LLM returns the full patched source file, which is written directly to disk; a unified diff is computed locally with `difflib` afterwards for reporting/audit purposes only (not for application).
+* **Output Requirements:** The Blue Team LLM returns the full patched source file, which is written directly to disk; a unified diff is computed locally with `difflib` afterwards and saved to `patch_report.diff` for reporting/audit purposes only (not for application). The file is overwritten on each patch attempt and cleared at the start of every run (`node_init`), so it never accumulates across runs.
 
 ---
 
