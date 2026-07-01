@@ -78,7 +78,7 @@ python main.py
 Al termine dell'esecuzione, l'agente calcola e stampa a schermo le seguenti metriche richieste:
 * **Exploit Blocking Rate**: % di attacchi bloccati con successo.
 * **Preservation of Business Logic**: % di test funzionali legittimi passati post-patch.
-* **Patch Applicability**: % di patch in formato Unified Diff applicate senza errori o conflitti.
+* **Patch Applicability**: % di patch (file PHP intero generato dall'LLM) scritte su disco con successo, senza codice vuoto o identico all'originale.
 * **Syntax & Runtime Errors**: Numero di fallimenti di validazione sintattica PHP (`php -l`).
 * **LLM Iterations**: Numero di tentativi e cicli necessari all'LLM per generare una patch valida.
 

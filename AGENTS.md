@@ -15,8 +15,8 @@ When operating within this repository, you must strictly align your sub-tasks wi
 
 1.  **Vulnerability Discovery:** Analyze the application context/endpoints to generate potential exploit payloads.
 2.  **Vulnerability Confirmation:** Execute payloads against the live DVWA instance and verify success by parsing HTTP responses/logs.
-3.  **Patch Generation:** Analyze the vulnerable source code file alongside the successful exploit data. **You must always output patches in the Structured Unified Diff format.**
-4.  **Patch Validation:** Apply the diff and run the dual-verification testing suite.
+3.  **Patch Generation:** Analyze the vulnerable source code file alongside the successful exploit data. **The LLM outputs the full corrected source file**, which is written to disk; a unified diff is computed locally via `difflib` purely for reporting/logging.
+4.  **Patch Validation:** Lint the patched file (`php -l`) and run the dual-verification testing suite.
 
 ---
 
@@ -29,7 +29,7 @@ A patch is considered successful **only** if it satisfies two conditions during 
 You must log and report the following metrics during experimental runs:
 * **Exploit Blocking Rate:** % of attacks successfully mitigated.
 * **Preservation of Business Logic:** % of legitimate functional tests passing post-patch.
-* **Patch Applicability:** % of unified diffs applied without conflicts or runtime crashes.
+* **Patch Applicability:** % of full-file patches written to disk successfully (non-empty, non-identical to the original).
 * **Syntax & Runtime Errors:** Compilation or PHP linting (`php -l`) failures.
 * **LLM Iterations:** Number of refinement loops needed to fix a single flaw.
 
@@ -39,7 +39,7 @@ You must log and report the following metrics during experimental runs:
 * **Target Environment:** Dockerized DVWA (`https://github.com/digininja/DVWA/`).
 * **Automation Code:** Python scripts handling the pipeline orchestration.
 * **State Reset:** The database must be automatically reset/restored to a clean state before validation loops to ensure reproducible experiments.
-* **Output Requirements:** Never overwrite entire source files when proposing fixes to the user; always structure recommendations as raw **Unified Diffs** so they can be easily parsed or applied programmatically.
+* **Output Requirements:** The Blue Team LLM returns the full patched source file, which is written directly to disk; a unified diff is computed locally with `difflib` afterwards for reporting/audit purposes only (not for application).
 
 ---
 

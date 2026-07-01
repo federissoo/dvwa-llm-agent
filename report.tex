@@ -31,7 +31,7 @@ The system targets \textbf{DVWA (Damn Vulnerable Web Application)} running insid
 \begin{itemize}
     \item \textbf{Offensive Module (Red Team):} Iteratively generates SQL Injection payloads until the exploit is successful.
     \item \textbf{Evaluation Module (Judges):} Analyzes HTTP responses to determine whether the attack succeeded or failed, extracting reasoning and techniques.
-    \item \textbf{Defensive Module (Blue Team):} Analyzes the vulnerable source code (\texttt{low.php}) alongside the successful exploit data and generates a patch using the Structured Unified Diff format.
+    \item \textbf{Defensive Module (Blue Team):} Analyzes the vulnerable source code (\texttt{low.php}) alongside the successful exploit data and asks the LLM for the complete corrected source file, which is written directly to disk; a unified diff is then computed deterministically via Python's \texttt{difflib} purely for reporting purposes.
     \item \textbf{Validation Module:} Resets the database and executes a Dual-Verification test (Security Exploit Test + Functional Regression Test) to confirm the integrity of the patch.
 \end{itemize}
 
@@ -41,7 +41,7 @@ The project followed a practical, step-by-step approach:
     \item Setup of DVWA on Docker, including automated login and programmatic database reset scripts to ensure a reproducible environment before every validation loop.
     \item Development of the adversarial pipeline (Red Team vs. Blue Team) focusing on SQL Injection vulnerabilities.
     \item Implementation of the validation checks: re-attacking the newly patched code and performing functional checks to ensure legitimate requests (e.g., \texttt{id=1}) still return correct data.
-    \item Enforcement of a strict Unified Diff output from the LLM, coupled with an automatic \texttt{php -l} linting phase to catch syntax errors before the patch is applied.
+    \item Full-file patch generation from the LLM (rather than a diff format), coupled with an automatic \texttt{php -l} linting phase to catch syntax errors after the patched file is written to disk.
     \item Collection of key performance metrics evaluating both offensive success and defensive code applicability.
 \end{enumerate}
 
@@ -57,6 +57,9 @@ During our tests using Llama-3.3-70b (via Groq), the Red Team successfully bypas
 \end{itemize}
 
 These findings suggest that while LLMs can correctly identify the vulnerability and propose the correct logical fix (e.g., using prepared statements), forcing them to output strict \texttt{Unified Diff} formats suitable for the standard Linux \texttt{patch} utility introduces a significant bottleneck in applicability.
+
+\subsection*{Architectural Fix}
+Based on this bottleneck, the pipeline was subsequently refactored: the Blue Team node now asks the LLM for the complete corrected source file instead of a diff, which is written directly to disk. The unified diff is still computed, but deterministically via Python's \texttt{difflib} against the original file, solely for human-readable reporting. This removes the \texttt{patch}-utility hunk-matching step entirely, so Patch Applicability no longer depends on the LLM reproducing exact context lines. The experiment has not yet been re-run end-to-end under this new architecture; updated metrics are expected to be collected in a follow-up evaluation.
 
 \section{Deliverables}
 The finalized repository (\texttt{dvwa-llm-agent}) contains:
